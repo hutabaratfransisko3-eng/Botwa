@@ -1,7 +1,8 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
-const NOMOR_HP_BOT = process.env.NOMOR_HP_BOT; 
+// Ambil nomor dari variabel Railway
+let NOMOR_HP = process.env.NOMOR_HP_BOT || '';
 
 const client = new Client({
     authStrategy: new LocalAuth(),
@@ -14,32 +15,32 @@ const client = new Client({
             '--disable-accelerated-2d-canvas',
             '--no-first-run',
             '--no-zygote',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ],
     }
 });
 
-let isRequestingPairingCode = false;
+let pairingCodeSent = false;
 
 client.on('qr', async (qr) => {
-    // Tampilkan QR versi kecil di log (sebagai cadangan)
+    // Tampilkan QR versi kecil di log
     console.log('\n--- QR CODE (BACKUP) ---');
     qrcode.generate(qr, { small: true });
 
-    if (!NOMOR_HP_BOT) {
+    if (!NOMOR_HP) {
         console.log('\n⚠️ NOMOR_HP_BOT belum diisi di Variables Railway!');
         return;
     }
 
-    // Cegah request berulang yang bikin kode cepat expired / ke-block
-    if (isRequestingPairingCode) return;
-    isRequestingPairingCode = true;
+    if (!pairingCodeSent) {
+        pairingCodeSent = true;
 
-    try {
-        // Bersihkan nomor HP dari karakter non-angka
-        const cleanNumber = NOMOR_HP_BOT.replace(/[^0-9]/g, '');
-        
-        // Minta pairing code dengan jeda singkat
+        // Bersihkan karakter selain angka
+        const cleanNumber = NOMOR_HP.replace(/[^0-9]/g, '');
+        console.log(`\n⏳ Mengajukan Pairing Code untuk nomor: ${cleanNumber}...`);
+
+        // Beri jeda 6 detik agar browser Puppeteer siap sepenuhnya
         setTimeout(async () => {
             try {
                 const code = await client.requestPairingCode(cleanNumber);
@@ -47,16 +48,11 @@ client.on('qr', async (qr) => {
                 console.log(`🔥 KODE TAUTAN WHATSAPP ANDA: ${code}`);
                 console.log('=============================================\n');
             } catch (err) {
-                console.error('❌ Gagal meminta Pairing Code:', err.message || err);
-            } finally {
-                // Izinkan request ulang setelah 60 detik jika belum masuk
-                setTimeout(() => { isRequestingPairingCode = false; }, 60000);
+                console.error('\n❌ Gagal meminta Pairing Code:', err);
+                // Reset agar bisa mencoba lagi pada siklus QR berikutnya
+                pairingCodeSent = false; 
             }
-        }, 3000);
-
-    } catch (err) {
-        console.error('❌ Error persiapan pairing code:', err);
-        isRequestingPairingCode = false;
+        }, 6000);
     }
 });
 
@@ -64,7 +60,7 @@ client.on('ready', () => {
     console.log('✅ Bot WhatsApp berhasil terhubung dan siap digunakan!');
 });
 
-// Logika Perintah !kirimpesan
+// Perintah !kirimpesan
 client.on('message', async (message) => {
     try {
         const chat = await message.getChat();
@@ -81,7 +77,7 @@ client.on('message', async (message) => {
                 await message.reply(
                     '❌ *Format salah!*\n\n' +
                     'Format: `!kirimpesan <pesan> | <jeda_menit> | <jumlah_pesan>`\n' +
-                    'Contoh: `!kirimpesan Tes Pengumuman | 1 | 3`'
+                    'Contoh: `!kirimpesan Tes Pesan | 1 | 3`'
                 );
                 return;
             }
@@ -91,7 +87,7 @@ client.on('message', async (message) => {
             const jumlahPesan = parseInt(parts[2]);
 
             if (isNaN(jedaMenit) || isNaN(jumlahPesan) || jedaMenit <= 0 || jumlahPesan <= 0) {
-                await message.reply('❌ Jeda waktu dan jumlah pesan harus berupa angka positif!');
+                await message.reply('❌ Jeda waktu dan jumlah pesan harus angka positif!');
                 return;
             }
 
@@ -113,7 +109,7 @@ client.on('message', async (message) => {
             }, intervalMs);
         }
     } catch (error) {
-        console.error('Terjadi kesalahan:', error);
+        console.error('Error:', error);
     }
 });
 

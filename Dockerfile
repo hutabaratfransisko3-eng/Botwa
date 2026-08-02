@@ -1,8 +1,9 @@
 # Gunakan Node.js versi 18 berbasis Linux Debian
 FROM node:18-slim
 
-# Instal Chromium dan dependensi sistem yang dibutuhkan oleh Puppeteer
+# Instal git (wajib untuk npm install dari GitHub) beserta Chromium dan dependensinya
 RUN apt-get update && apt-get install -y \
+    git \
     chromium \
     fonts-ipafont-gothic \
     fonts-wqy-zenhei \

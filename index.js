@@ -1,10 +1,43 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const express = require('express');
+const QRCode = require('qrcode');
 
-// Inisialisasi client dengan LocalAuth agar sesi tersimpan (tidak perlu scan QR terus-menerus)
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+let currentQR = '';
+
+// Jalankan web server kecil
+app.get('/', async (req, res) => {
+    if (!currentQR) {
+        return res.send('<h2>QR Code belum siap atau Bot sudah terhubung!</h2>');
+    }
+    try {
+        const qrImage = await QRCode.toDataURL(currentQR);
+        res.send(`
+            <html>
+                <head><title>Scan QR WA Bot</title></head>
+                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif;">
+                    <h2>Scan QR Code Ini di WhatsApp</h2>
+                    <img src="${qrImage}" style="width:300px; height:300px;" />
+                    <p>Refresh halaman jika QR kadaluarsa.</p>
+                </body>
+            </html>
+        `);
+    } catch (err) {
+        res.status(500).send('Error generating QR Code');
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Server QR berjalan di port ${PORT}`);
+});
+
+// Inisialisasi WhatsApp Client
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -17,42 +50,37 @@ const client = new Client({
     }
 });
 
-// Generate QR Code di terminal
+// Tangkap QR Code
 client.on('qr', (qr) => {
-    console.log('Scan QR Code di bawah ini menggunakan aplikasi WhatsApp Anda:');
-    qrcode.generate(qr, { small: true });
+    currentQR = qr;
+    console.log('--- QR CODE BARU TERSEDIA ---');
+    console.log('Buka URL domain Railway kamu untuk melakukan scan QR!');
 });
 
-// Notifikasi ketika bot berhasil terhubung
+// Ketika Bot Terhubung
 client.on('ready', () => {
-    console.log('Bot WhatsApp berhasil terhubung dan siap digunakan!');
+    currentQR = ''; // Hapus QR setelah berhasil login
+    console.log('✅ Bot WhatsApp berhasil terhubung dan siap digunakan!');
 });
 
-// Mendengarkan pesan masuk
+// Logika Perintah !kirimpesan
 client.on('message', async (message) => {
     try {
         const chat = await message.getChat();
-
-        // Pastikan perintah hanya berjalan di dalam Grup
         if (!chat.isGroup) return;
 
         const args = message.body.trim().split(' ');
         const command = args[0].toLowerCase();
 
-        // Format Perintah: !kirimpesan <pesan> | <jeda_menit> | <jumlah>
-        // Contoh: !kirimpesan Halo, ini pengumuman penting! | 1 | 5
         if (command === '!kirimpesan') {
-            // Gabungkan kembali argumen lalu pisahkan dengan simbol pipa (|)
             const textContent = message.body.slice(11).trim();
             const parts = textContent.split('|').map(p => p.trim());
 
             if (parts.length < 3) {
                 await message.reply(
                     '❌ *Format salah!*\n\n' +
-                    'Gunakan format:\n' +
-                    '`!kirimpesan <pesan> | <jeda_menit> | <jumlah_pesan>`\n\n' +
-                    'Contoh:\n' +
-                    '`!kirimpesan Halo semuanya! | 1 | 3`'
+                    'Format: `!kirimpesan <pesan> | <jeda_menit> | <jumlah_pesan>`\n' +
+                    'Contoh: `!kirimpesan Test Pesan | 1 | 3`'
                 );
                 return;
             }
@@ -61,35 +89,31 @@ client.on('message', async (message) => {
             const jedaMenit = parseFloat(parts[1]);
             const jumlahPesan = parseInt(parts[2]);
 
-            // Validasi angka
             if (isNaN(jedaMenit) || isNaN(jumlahPesan) || jedaMenit <= 0 || jumlahPesan <= 0) {
-                await message.reply('❌ Jeda waktu dan jumlah pesan harus berupa angka positif!');
+                await message.reply('❌ Jeda waktu dan jumlah pesan harus angka positif!');
                 return;
             }
 
-            await message.reply(`✅ Perintah diterima! Pesan akan dikirim sebanyak ${jumlahPesan} kali dengan jeda ${jedaMenit} menit.`);
+            await message.reply(`✅ Pesan akan dikirim ${jumlahPesan}x dengan jeda ${jedaMenit} menit.`);
 
             let terkirim = 0;
             const intervalMs = jedaMenit * 60 * 1000;
 
-            // Eksekusi pengiriman berulang
             const intervalId = setInterval(async () => {
                 if (terkirim < jumlahPesan) {
                     terkirim++;
                     await chat.sendMessage(`[Pesan Otomatis ${terkirim}/${jumlahPesan}]\n\n${pesan}`);
-                    console.log(`Pesan terkirim ke grup ${chat.name} (${terkirim}/${jumlahPesan})`);
-
+                    
                     if (terkirim === jumlahPesan) {
                         clearInterval(intervalId);
-                        await chat.sendMessage('✨ Semua pesan otomatis telah selesai dikirim.');
+                        await chat.sendMessage('✨ Semua pesan selesai dikirim.');
                     }
                 }
             }, intervalMs);
         }
     } catch (error) {
-        console.error('Terjadi kesalahan:', error);
+        console.error('Error:', error);
     }
 });
 
-// Jalankan client
 client.initialize();

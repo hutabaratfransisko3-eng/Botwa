@@ -3,24 +3,33 @@ const express = require('express');
 const QRCode = require('qrcode');
 
 const app = express();
+// Railway membaca PORT dari environment secara otomatis
 const PORT = process.env.PORT || 3000;
 
 let currentQR = '';
 
-// Jalankan web server kecil
+// Route Halaman QR
 app.get('/', async (req, res) => {
     if (!currentQR) {
-        return res.send('<h2>QR Code belum siap atau Bot sudah terhubung!</h2>');
+        return res.send(`
+            <html>
+                <head><title>WA Bot Status</title></head>
+                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#111; color:#fff;">
+                    <h2>QR Code belum tersedia atau Bot SUDAH TERHUBUNG!</h2>
+                    <p>Cek halaman ini secara berkala atau periksa Deploy Logs.</p>
+                </body>
+            </html>
+        `);
     }
     try {
         const qrImage = await QRCode.toDataURL(currentQR);
         res.send(`
             <html>
                 <head><title>Scan QR WA Bot</title></head>
-                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif;">
+                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background:#111; color:#fff;">
                     <h2>Scan QR Code Ini di WhatsApp</h2>
-                    <img src="${qrImage}" style="width:300px; height:300px;" />
-                    <p>Refresh halaman jika QR kadaluarsa.</p>
+                    <img src="${qrImage}" style="width:300px; height:300px; border:10px solid white; border-radius:10px;" />
+                    <p style="margin-top:15px;">Refresh halaman jika QR tidak bisa discan / expired.</p>
                 </body>
             </html>
         `);
@@ -29,8 +38,13 @@ app.get('/', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server QR berjalan di port ${PORT}`);
+// Wajib bind ke host '0.0.0.0' agar Railway bisa mendeteksi web server
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server Express berhasil berjalan di port ${PORT}`);
+    
+    // Inisialisasi Puppeteer SETELAH web server aktif
+    console.log('Memulai inisialisasi WhatsApp Client...');
+    client.initialize();
 });
 
 // Inisialisasi WhatsApp Client
@@ -50,20 +64,16 @@ const client = new Client({
     }
 });
 
-// Tangkap QR Code
 client.on('qr', (qr) => {
     currentQR = qr;
-    console.log('--- QR CODE BARU TERSEDIA ---');
-    console.log('Buka URL domain Railway kamu untuk melakukan scan QR!');
+    console.log('--- QR CODE BARU SIAP DI SCAN VIA WEB ---');
 });
 
-// Ketika Bot Terhubung
 client.on('ready', () => {
-    currentQR = ''; // Hapus QR setelah berhasil login
-    console.log('✅ Bot WhatsApp berhasil terhubung dan siap digunakan!');
+    currentQR = '';
+    console.log('✅ Bot WhatsApp berhasil terhubung!');
 });
 
-// Logika Perintah !kirimpesan
 client.on('message', async (message) => {
     try {
         const chat = await message.getChat();
@@ -106,6 +116,15 @@ client.on('message', async (message) => {
                     
                     if (terkirim === jumlahPesan) {
                         clearInterval(intervalId);
+                        await chat.sendMessage('✨ Semua pesan selesai dikirim.');
+                    }
+                }
+            }, intervalMs);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+    }
+});                        clearInterval(intervalId);
                         await chat.sendMessage('✨ Semua pesan selesai dikirim.');
                     }
                 }
